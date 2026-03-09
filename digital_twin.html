@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bionics ThinkPad Test - V3</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body style="margin: 0; background: #050505; color: white; font-family: Arial; overflow: hidden;">
+
+    <div style="position: absolute; top: 20px; left: 20px; z-index: 10; pointer-events: none;">
+        <h1 style="margin:0; font-size: 1.5em;">Neural Link: <span id="status" style="color: red;">OFFLINE</span></h1>
+        <p>Intent Intensity: <span id="val">0</span>%</p>
+        <div style="background: rgba(0,255,255,0.1); border: 1px solid #00f2ff; padding: 10px; border-radius: 5px; font-size: 0.75em; margin-top: 10px;">
+            <p><b>ARROWS</b>: Shoulder Tilt/Swivel | <b>SPACE/SHIFT</b>: Elbow</p>
+            <p><b>WASD</b>: Wrist Pitch/Yaw</p>
+            <p><b>T</b>: Thumb | <b>I, M, R, P</b>: Fingers (K, N, F, L to reverse)</p>
+            <p><i>Left Click + Drag: Rotate Camera</i></p>
+        </div>
+    </div>
+
+<script>
+    // 1. SCENE SETUP
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const light = new THREE.DirectionalLight(0xffffff, 1.5);
+    light.position.set(2, 2, 5);
+    scene.add(light, new THREE.AmbientLight(0x333333));
+
+    // 2. MODELING
+    const armGroup = new THREE.Group(); 
+    const material = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4 });
+
+    // Forearm
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2.5), material);
+    arm.position.y = 1.13;
+    armGroup.add(arm);
+
+    // Palm
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.3), material);
+    palm.position.set(0, 1.55, 0);
+    arm.add(palm);
+
+    const fingers = [];
+    const createFinger = (x, z, h, color, isThumb = false) => {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.5 });
+        const part = new THREE.Mesh(new THREE.BoxGeometry(0.1, h, 0.1), mat);
+        part.position.y = h / 2;
+        group.add(part);
+        group.position.set(x, 0.25, z);
+        if (isThumb) {
+            group.rotation.y = Math.PI / 4;
+            group.position.set(-0.35, -0.1, 0.1);
+        }
+        palm.add(group);
+        group.userData.material = mat;
+        return group;
+    };
+
+    // Fingers: Index, Middle, Ring, Pinky
+    fingers.push(createFinger(-0.20, 0, 0.6, 0xff0055)); 
+    fingers.push(createFinger(-0.02, 0, 0.7, 0x00ff88)); 
+    fingers.push(createFinger(0.15, 0, 0.65, 0x0066ff)); 
+    fingers.push(createFinger(0.30, 0, 0.5, 0xcc00ff));  
+    const thumb = createFinger(-0.35, 0.1, 0.5, 0xffff00, true);
+
+    scene.add(armGroup);
+    camera.position.set(0, 2, 6);
+
+    // 3. MOTION STATE
+    const state = {
+        shoulderX: { current: 0, target: 0 },
+        shoulderY: { current: 0, target: 0 },
+        elbow: { current: 0, target: 0 },
+        wristX: { current: 0, target: 0 },
+        wristY: { current: 0, target: 0 },
+        thumb: { current: 0, target: 0 },
+        index: { current: 0, target: 0 },
+        middle: { current: 0, target: 0 },
+        ring: { current: 0, target: 0 },
+        pinky: { current: 0, target: 0 }
+    };
+
+    // 4. CONTROLS
+    window.addEventListener('keydown', (e) => {
+        const k = e.key.toLowerCase();
+        // Arm
+        if (e.key === 'ArrowUp') state.shoulderX.target = 0.5;
+        if (e.key === 'ArrowDown') state.shoulderX.target = -0.5;
+        if (e.key === 'ArrowLeft') state.shoulderY.target = 0.5;
+        if (e.key === 'ArrowRight') state.shoulderY.target = -0.5;
+        if (e.code === 'Space') state.elbow.target = 1.2;
+        if (e.shiftKey) state.elbow.target = -0.5;
+        // Wrist
+        if (k === 'w') state.wristX.target = 1.0;
+        if (k === 's') state.wristX.target = -1.0;
+        if (k === 'a') state.wristY.target = 1.0;
+        if (k === 'd') state.wristY.target = -1.0;
+        // Fingers
+        if (k === 't') state.thumb.target = 1.2;
+        if (k === 'i') state.index.target = 1.4;
+        if (k === 'k') state.index.target = -1.4;
+        if (k === 'm') state.middle.target = 1.4;
+        if (k === 'n') state.middle.target = -1.4;
+        if (k === 'r') state.ring.target = 1.4;
+        if (k === 'f') state.ring.target = -1.4;
+        if (k === 'p') state.pinky.target = 1.4;
+        if (k === 'l') state.pinky.target = -1.4;
+    });
+
+    window.addEventListener('keyup', (e) => {
+        const k = e.key.toLowerCase();
+        if (['arrowup', 'arrowdown'].includes(k)) state.shoulderX.target = 0;
+        if (['arrowleft', 'arrowright'].includes(k)) state.shoulderY.target = 0;
+        if (e.code === 'Space' || e.key === 'Shift') state.elbow.target = 0;
+        if (['w', 's'].includes(k)) state.wristX.target = 0;
+        if (['a', 'd'].includes(k)) state.wristY.target = 0;
+        if (k === 't') state.thumb.target = 0;
+        if (['i', 'k'].includes(k)) state.index.target = 0;
+        if (['m', 'n'].includes(k)) state.middle.target = 0;
+        if (['r', 'f'].includes(k)) state.ring.target = 0;
+        if (['p', 'l'].includes(k)) state.pinky.target = 0;
+    });
+
+    // 5. ANIMATION
+    function animate() {
+        requestAnimationFrame(animate);
+
+        Object.keys(state).forEach(key => {
+            state[key].current += (state[key].target - state[key].current) * 0.1;
+        });
+
+        // Apply Shoulder/Elbow
+        armGroup.rotation.x = state.shoulderX.current;
+        armGroup.rotation.y = state.shoulderY.current;
+        arm.rotation.z = -state.elbow.current;
+
+        // Apply Wrist
+        palm.rotation.x = state.wristX.current;
+        palm.rotation.y = state.wristY.current;
+
+        // Apply Fingers
+        thumb.rotation.x = state.thumb.current;
+        fingers[0].rotation.x = state.index.current;
+        fingers[1].rotation.x = state.middle.current;
+        fingers[2].rotation.x = state.ring.current;
+        fingers[3].rotation.x = state.pinky.current;
+
+        // Glow Logic
+        fingers.forEach((f, i) => {
+            const keys = ['index', 'middle', 'ring', 'pinky'];
+            f.userData.material.emissiveIntensity = 0.4 + Math.abs(state[keys[i]].current) * 4;
+        });
+        thumb.userData.material.emissiveIntensity = 0.4 + Math.abs(state.thumb.current) * 4;
+
+        renderer.render(scene, camera);
+    }
+
+    // 6. CAMERA ROTATION
+    let isDragging = false;
+    let prevMouse = { x: 0, y: 0 };
+    window.addEventListener('mousedown', () => isDragging = true);
+    window.addEventListener('mouseup', () => isDragging = false);
+    window.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            scene.rotation.y += (e.offsetX - prevMouse.x) * 0.01;
+            scene.rotation.x += (e.offsetY - prevMouse.y) * 0.01;
+        }
+        prevMouse = { x: e.offsetX, y: e.offsetY };
+    });
+
+    animate();
+</script>
+</body>
+</html>
