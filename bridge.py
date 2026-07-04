@@ -6,6 +6,10 @@ from fastapi import FastAPI
 from socketio import AsyncServer, ASGIApp
 import uvicorn
 
+from kinematics_engine import LegKinematicsEngine
+from safety_guard import SafetyGuard
+from hardware_interface import BionicHardwareInterface
+
 BOARD_ID = BoardIds.SYNTHETIC_BOARD.value 
 PARAMS = BrainFlowInputParams()
 BOARD = BoardShim(BOARD_ID, PARAMS)
