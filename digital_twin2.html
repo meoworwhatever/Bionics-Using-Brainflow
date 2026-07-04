@@ -1,1 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bionics Leg Test</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body style="margin: 0; background: #050505; color: white; font-family: Arial; overflow: hidden;">
 
+    <div style="position: absolute; top: 20px; left: 20px; z-index: 10; pointer-events: none;">
+        <h1 style="margin:0; font-size: 1.5em;">Neural Link (Leg): <span id="status" style="color: red;">OFFLINE</span></h1>
+        <p>Intent Intensity: <span id="val">0</span>%</p>
+        <div style="background: rgba(0,255,255,0.1); border: 1px solid #00f2ff; padding: 10px; border-radius: 5px; font-size: 0.75em; margin-top: 10px;">
+            <p><b>ARROWS</b>: Hip Flexion/Extension & Abduction</p>
+            <p><b>SPACE/SHIFT</b>: Knee Flexion/Extension</p>
+            <p><b>WASD</b>: Ankle Dorsiflexion (Pitch) / Inversion (Roll)</p>
+            <p><b>T</b>: Big Toe | <b>Y</b>: Lesser Toes</p>
+            <p><i>Left Click + Drag: Rotate Camera</i></p>
+        </div>
+    </div>
+
+<script>
+    // 1. SCENE SETUP
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const light = new THREE.DirectionalLight(0xffffff, 1.5);
+    light.position.set(2, 5, 5);
+    scene.add(light, new THREE.AmbientLight(0x333333));
+
+    // Grid floor for lower-limb grounding context
+    const grid = new THREE.GridHelper(10, 10, 0x00f2ff, 0x222222);
+    grid.position.y = -3;
+    scene.add(grid);
+
+    // 2. MODELING THE LEG HIERARCHY
+    const legGroup = new THREE.Group(); // Represents the Hip Joint anchor
+    legGroup.position.y = 2.5; // Lift up so it hangs naturally down toward the floor
+    const material = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4 });
+
+    // Thigh (Femur)
+    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.28, 2.2), material);
+    thigh.position.y = -1.1; // Offset pivot to top of thigh
+    legGroup.add(thigh);
+
+    // Knee Joint & Calf (Tibia)
+    const kneeGroup = new THREE.Group();
+    kneeGroup.position.y = -1.1; // Pivot point at the bottom of the thigh
+    thigh.add(kneeGroup);
+
+    const calf = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.18, 2.2), material);
+    calf.position.y = -1.1; // Offset down from knee pivot
+    kneeGroup.add(calf);
+
+    // Ankle Joint & Foot
+    const ankleGroup = new THREE.Group();
+    ankleGroup.position.y = -1.1; // Pivot point at the bottom of calf
+    calf.add(ankleGroup);
+
+    // Foot Base (Heel to mid-foot)
+    const footMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5 });
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 1.2), footMat);
+    foot.position.set(0, -0.15, 0.3); // Extend forward on Z axis
+    ankleGroup.add(foot);
+
+    // Toes Setup
+    const createToe = (x, z, w, color) => {
+        const group = new THREE.Group();
+        const mat = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.5 });
+        const part = new THREE.Mesh(new THREE.BoxGeometry(w, 0.15, 0.3), mat);
+        part.position.z = 0.15; // Pivot from back of toe segment
+        group.add(part);
+        group.position.set(x, -0.1, z);
+        foot.add(group);
+        group.userData.material = mat;
+        return group;
+    };
+
+    // Distribute bionic toes at front edge of the foot box
+    const bigToe = createToe(-0.15, 0.9, 0.14, 0x00ff88);
+    const lesserToes = createToe(0.1, 0.9, 0.25, 0xff0055); // Unified bionic pad for outer toes
+
+    scene.add(legGroup);
+    camera.position.set(3, 0, 5);
+    camera.lookAt(0, -0.5, 0);
+
+    // 3. LOWER-LIMB MOTION STATE
+    const state = {
+        hipPitch: { current: 0, target: 0 },  // Front/Back swing
+        hipRoll: { current: 0, target: 0 },   // Side-to-side abduction
+        knee: { current: 0, target: 0 },      // Flexion back
+        anklePitch: { current: 0, target: 0}, // Dorsi/Plantarflexion
+        ankleRoll: { current: 0, target: 0 },  // Inversion/Eversion
+        bigToe: { current: 0, target: 0 },
+        lesserToes: { current: 0, target: 0 }
+    };
+
+    // 4. CONTROLS
+    window.addEventListener('keydown', (e) => {
+        const k = e.key.toLowerCase();
+        
+        // Hip Controls
+        if (e.key === 'ArrowUp') state.hipPitch.target = 0.6;     // Swing forward
+        if (e.key === 'ArrowDown') state.hipPitch.target = -0.4;   // Swing back
+        if (e.key === 'ArrowLeft') state.hipRoll.target = -0.3;    // Outward abduction
+        if (e.key === 'ArrowRight') state.hipRoll.target = 0.3;
+
+        // Knee Controls (Knees bend backwards structurally)
+        if (e.code === 'Space') state.knee.target = 1.3;
+        if (e.shiftKey) state.knee.target = -0.1; 
+
+        // Ankle Controls
+        if (k === 'w') state.anklePitch.target = 0.4;  // Toes up
+        if (k === 's') state.anklePitch.target = -0.5; // Toes down
+        if (k === 'a') state.ankleRoll.target = -0.3;  // Roll in
+        if (k === 'd') state.ankleRoll.target = 0.3;   // Roll out
+
+        // Toes
+        if (k === 't') state.bigToe.target = 0.5;
+        if (k === 'y') state.lesserToes.target = 0.5;
+    });
+
+    window.addEventListener('keyup', (e) => {
+        const k = e.key.toLowerCase();
+        if (['arrowup', 'arrowdown'].includes(e.key)) state.hipPitch.target = 0;
+        if (['arrowleft', 'arrowright'].includes(e.key)) state.hipRoll.target = 0;
+        if (e.code === 'Space' || e.key === 'Shift') state.knee.target = 0;
+        if (['w', 's'].includes(k)) state.anklePitch.target = 0;
+        if (['a', 'd'].includes(k)) state.ankleRoll.target = 0;
+        if (k === 't') state.bigToe.target = 0;
+        if (k === 'y') state.lesserToes.target = 0;
+    });
+
+    // 5. ANIMATION LOOP
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // Smooth Interpolation
+        Object.keys(state).forEach(key => {
+            state[key].current += (state[key].target - state[key].current) * 0.1;
+        });
+
+        // Apply Hip rotations to top parent group
+        legGroup.rotation.x = state.hipPitch.current;
+        legGroup.rotation.z = state.hipRoll.current;
+
+        // Apply Knee rotation (human knees bend backward, positive X in standard local space)
+        kneeGroup.rotation.x = state.knee.current;
+
+        // Apply Ankle rotations
+        ankleGroup.rotation.x = state.anklePitch.current;
+        ankleGroup.rotation.z = state.ankleRoll.current;
+
+        // Apply Toes
+        bigToe.rotation.x = -state.bigToe.current;
+        lesserToes.rotation.x = -state.lesserToes.current;
+
+        // Glow Logic based on activation
+        bigToe.userData.material.emissiveIntensity = 0.4 + Math.abs(state.bigToe.current) * 4;
+        lesserToes.userData.material.emissiveIntensity = 0.4 + Math.abs(state.lesserToes.current) * 4;
+
+        renderer.render(scene, camera);
+    }
+
+    // 6. CAMERA CAMERA INTERACTION
+    let isDragging = false;
+    let prevMouse = { x: 0, y: 0 };
+    window.addEventListener('mousedown', () => isDragging = true);
+    window.addEventListener('mouseup', () => isDragging = false);
+    window.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            scene.rotation.y += (e.offsetX - prevMouse.x) * 0.01;
+            scene.rotation.x += (e.offsetY - prevMouse.y) * 0.01;
+        }
+        prevMouse = { x: e.offsetX, y: e.offsetY };
+    });
+
+    animate();
+</script>
+</body>
+</html>
