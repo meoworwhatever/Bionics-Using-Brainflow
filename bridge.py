@@ -28,6 +28,11 @@ sio = AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 app = FastAPI()
 socket_app = ASGIApp(sio, app)
 
+kinematics = LegKinematicsEngine()
+guard = SafetyGuard()
+hw_interface = BionicHardwareInterface()
+hw_interface.connect()
+
 def calculate_flex(rms):
     """Maps raw brain energy (RMS) to a 0.0 - 1.0 range with a deadzone."""
     global baseline_rms, peak_rms
