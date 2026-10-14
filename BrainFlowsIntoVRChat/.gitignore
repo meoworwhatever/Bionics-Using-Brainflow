@@ -1,0 +1,16 @@
+*.data
+**/*.pyc
+*.bat
+**/dataset/
+**/*.zip
+**/*.tmp
+
+**/*.pkl
+!**/physionet_scaler.pkl
+
+**/*.keras
+!**/physionet_*.keras
+
+**/logs/
+
+*_env
