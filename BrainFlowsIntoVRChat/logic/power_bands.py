@@ -26,10 +26,11 @@ class PwrBands(BaseLogic):
         self.max_sample_size = self.sampling_rate * window_seconds
 
         # sort left and right channels
-        eeg_nums = map(lambda eeg_name: int(''.join(re.findall(r'\d+', eeg_name))), eeg_names)
+        eeg_nums = [i for i, _ in enumerate(eeg_names)]
         chan_num_pairs = list(zip(self.eeg_channels, eeg_nums))
         self.left_chans = [eeg_chan for eeg_chan, eeg_num in chan_num_pairs if eeg_num % 2 != 0]
         self.right_chans = [eeg_chan for eeg_chan, eeg_num in chan_num_pairs if eeg_num % 2 == 0]
+
 
         # ema smoothing variables
         self.current_dict = {}
