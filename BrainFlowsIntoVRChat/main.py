@@ -69,19 +69,19 @@ def parse_args() -> argparse.Namespace:
                         help='port the osc listener', required=False, default=9000)
     
     # choose which reporter to use
-    parser.add_argument("--use-old-reporter", type=bool, action=argparse.BooleanOptionalAction, 
+    parser.add_argument("--use-old-reporter", action=argparse.BooleanOptionalAction,
                         help='add this argument to use the old osc reporter')
 
     # toggle debug mode
-    parser.add_argument("--debug", type=bool, action=argparse.BooleanOptionalAction, 
+    parser.add_argument("--debug", action=argparse.BooleanOptionalAction,
                         help='add this argument to toggle debug mode on')
     
     # toggle value logging
-    parser.add_argument("--enable-logs", type=bool, action=argparse.BooleanOptionalAction, 
+    parser.add_argument("--enable-logs", action=argparse.BooleanOptionalAction,
                         help='add this argument to toggle value logging on')
 
     # arguments to configure MLAction
-    parser.add_argument("--enable-action", type=bool, action=argparse.BooleanOptionalAction, 
+    parser.add_argument("--enable-action", action=argparse.BooleanOptionalAction,
                         help='add this argument to enable ml action logic')
     parser.add_argument("--action-ema-multiplier", type=float, required=False, default=5.0,
                         help='multiplier to speed up or slow down the reactiveness of ml action logic')
@@ -231,8 +231,8 @@ def main_loop(args: argparse.Namespace, reporter: Reporter, retries: int):
             for param_path, param_value in send_pairs:
                 BoardShim.log_message(LogLevels.LEVEL_DEBUG.value, "{}:\t{:.3f}".format(param_path, param_value))
             
-            # sleep based on refresh_rate
             BoardShim.log_message(LogLevels.LEVEL_DEBUG.value, "Sleeping")
+            # sleep based on refresh_rate
             execution_time = time.time() - start_time
             sleep_time = 1.0 / refresh_rate_hz - execution_time
             sleep_time = max(sleep_time, 0)
